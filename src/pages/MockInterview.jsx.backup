@@ -1,0 +1,328 @@
+import { useState, useEffect, useRef } from "react";
+import Navbar from "../components/Navbar";
+import Card from "../components/Card";
+import api from "../utils/api";
+import Loader from "../components/Loader";
+import Timer from "../components/Timer";
+import { useNavigate } from "react-router-dom";
+
+const MockInterview = () => {
+    const [role, setRole] = useState("Frontend Developer");
+    const [difficulty, setDifficulty] = useState("medium");
+    const [question, setQuestion] = useState("");
+    const [answer, setAnswer] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [resume, setResume] = useState(null);
+    const [resumeText, setResumeText] = useState("");
+    const [inputMode, setInputMode] = useState('text'); // 'text' or 'voice'
+    const navigate = useNavigate();
+
+    // Handle resume upload and text extraction
+    const handleResumeUpload = async (file) => {
+        if (file.size > 5 * 1024 * 1024) {
+            alert("File size should be less than 5MB");
+            return;
+        }
+
+        setResume(file);
+
+        // Extract text from PDF using FileReader
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                // For now, we'll send the file to backend for text extraction
+                // Or use a library like pdf.js on frontend
+                const formData = new FormData();
+                formData.append('resume', file);
+
+                // Send to backend for text extraction
+                const res = await api.post('/interview/extract-resume', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+
+                setResumeText(res.data.text);
+                console.log("Resume text extracted:", res.data.text.substring(0, 200));
+            } catch (error) {
+                console.error("Error extracting resume text:", error);
+                // Fallback: just store filename
+                setResumeText(`Resume: ${file.name}`);
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
+    // Roles list
+    const roles = [
+        "Frontend Developer", "Backend Developer", "Full‑Stack Developer",
+        "Mobile App Developer", "AI/ML Engineer", "Data Scientist",
+        "Data Engineer", "DevOps Engineer", "Cloud Engineer",
+        "Cybersecurity Engineer", "Blockchain Developer"
+    ];
+
+    const handleGenerate = async () => {
+        setLoading(true);
+        try {
+            const payload = { role, difficulty };
+            if (resumeText) {
+                payload.resumeContext = resumeText;
+            }
+            const res = await api.post("/interview/generate-question", payload);
+            setQuestion(res.data.question);
+            localStorage.setItem("currentInterviewId", res.data.interviewId);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSubmit = async () => {
+        setLoading(true);
+        try {
+            const interviewId = localStorage.getItem("currentInterviewId");
+            const res = await api.post("/interview/submit", { interviewId, answerText: answer });
+            navigate(`/result/${res.data.resultId}`);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Simulated speech recording effect
+    const toggleRecording = () => {
+        if (!isRecording) {
+            setIsRecording(true);
+            // In a real app, this would start MediaRecorder
+        } else {
+            setIsRecording(false);
+        }
+    };
+
+    return (
+        <div style={{ minHeight: "100vh" }}>
+            <Navbar />
+            <main style={{ maxWidth: 900, margin: "0 auto", padding: "2rem 1.5rem" }}>
+                <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+                    <h2 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+                        InterviewOrbit Coach
+                    </h2>
+                    <p style={{ color: "#94a3b8" }}>Customize your session and let the AI evaluate you.</p>
+                </div>
+
+                <Card>
+                    <div className="glass-inner" style={{ padding: "2rem" }}>
+                        {!question ? (
+                            /* SETUP PHASE */
+                            <div style={{ display: "grid", gap: "1.5rem", maxWidth: 500, margin: "0 auto" }}>
+                                <div>
+                                    <label style={{ display: "block", marginBottom: "0.5rem", color: "#cbd5e1", fontSize: "0.9rem" }}>Target Role</label>
+                                    <select
+                                        value={role}
+                                        onChange={(e) => setRole(e.target.value)}
+                                        style={{ width: "100%" }}
+                                    >
+                                        {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* Resume Upload Section */}
+                                <div>
+                                    <label style={{ display: "block", marginBottom: "0.5rem", color: "#cbd5e1", fontSize: "0.9rem" }}>
+                                        Upload Resume (Optional)
+                                    </label>
+                                    <div style={{
+                                        border: "2px dashed rgba(148,163,184,0.3)",
+                                        borderRadius: "8px",
+                                        padding: "1.5rem",
+                                        textAlign: "center",
+                                        background: "rgba(30,41,59,0.3)",
+                                        cursor: "pointer",
+                                        transition: "all 0.3s"
+                                    }}
+                                        onDragOver={(e) => {
+                                            e.preventDefault();
+                                            e.currentTarget.style.borderColor = "#38bdf8";
+                                            e.currentTarget.style.background = "rgba(56,189,248,0.1)";
+                                        }}
+                                        onDragLeave={(e) => {
+                                            e.currentTarget.style.borderColor = "rgba(148,163,184,0.3)";
+                                            e.currentTarget.style.background = "rgba(30,41,59,0.3)";
+                                        }}
+                                        onDrop={(e) => {
+                                            e.preventDefault();
+                                            e.currentTarget.style.borderColor = "rgba(148,163,184,0.3)";
+                                            e.currentTarget.style.background = "rgba(30,41,59,0.3)";
+                                            const file = e.dataTransfer.files[0];
+                                            if (file && (file.type === "application/pdf" || file.name.endsWith('.pdf'))) {
+                                                handleResumeUpload(file);
+                                            } else {
+                                                alert("Please upload a PDF file");
+                                            }
+                                        }}
+                                        onClick={() => document.getElementById('resumeInput').click()}>
+                                        <input
+                                            id="resumeInput"
+                                            type="file"
+                                            accept=".pdf"
+                                            style={{ display: "none" }}
+                                            onChange={(e) => {
+                                                const file = e.target.files[0];
+                                                if (file) handleResumeUpload(file);
+                                            }}
+                                        />
+                                        {resume ? (
+                                            <div>
+                                                <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📄</div>
+                                                <p style={{ color: "#4ade80", fontWeight: 500, marginBottom: "0.25rem" }}>
+                                                    {resume.name}
+                                                </p>
+                                                <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
+                                                    {(resume.size / 1024).toFixed(1)} KB
+                                                </p>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setResume(null);
+                                                        setResumeText("");
+                                                    }}
+                                                    style={{
+                                                        marginTop: "0.5rem",
+                                                        padding: "0.4rem 1rem",
+                                                        background: "rgba(248,113,113,0.2)",
+                                                        border: "1px solid #f87171",
+                                                        borderRadius: "6px",
+                                                        color: "#fca5a5",
+                                                        cursor: "pointer",
+                                                        fontSize: "0.85rem"
+                                                    }}>
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📤</div>
+                                                <p style={{ color: "#cbd5e1", marginBottom: "0.25rem" }}>
+                                                    Drop your resume here or click to browse
+                                                </p>
+                                                <p style={{ color: "#64748b", fontSize: "0.85rem" }}>
+                                                    PDF format, max 5MB
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {resume && (
+                                        <p style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#4ade80", textAlign: "center" }}>
+                                            ✅ Questions will be personalized based on your resume
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <label style={{ display: "block", marginBottom: "0.5rem", color: "#cbd5e1", fontSize: "0.9rem" }}>Difficulty Level</label>
+                                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                                        {["easy", "medium", "hard"].map((lvl) => (
+                                            <button
+                                                key={lvl}
+                                                onClick={() => setDifficulty(lvl)}
+                                                style={{
+                                                    flex: 1,
+                                                    padding: "0.6rem",
+                                                    borderRadius: "8px",
+                                                    border: difficulty === lvl ? "1px solid #38bdf8" : "1px solid rgba(148,163,184,0.2)",
+                                                    background: difficulty === lvl ? "rgba(56,189,248,0.15)" : "transparent",
+                                                    color: difficulty === lvl ? "#38bdf8" : "#94a3b8",
+                                                    cursor: "pointer",
+                                                    textTransform: "capitalize"
+                                                }}
+                                            >
+                                                {lvl}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <button
+                                    className="btn-gradient"
+                                    onClick={handleGenerate}
+                                    disabled={loading}
+                                    style={{ marginTop: "1rem", width: "100%" }}
+                                >
+                                    {loading ? <Loader /> : "Start Interview Session"}
+                                </button>
+                            </div>
+                        ) : (
+                            /* INTERVIEW PHASE */
+                            <div className="interview-mode">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                    <span style={{
+                                        background: 'rgba(99, 102, 241, 0.2)', color: '#a5b4fc',
+                                        padding: '0.3rem 0.8rem', borderRadius: 99, fontSize: '0.8rem'
+                                    }}>
+                                        {role} • {difficulty}
+                                    </span>
+                                    <Timer duration={120} onTimeUp={() => alert("Time is up! Wrap up your answer.")} />
+                                </div>
+
+                                <div style={{
+                                    marginBottom: "2rem", padding: "1.5rem",
+                                    background: "rgba(15, 23, 42, 0.4)", borderRadius: "12px", borderLeft: "4px solid #38bdf8"
+                                }}>
+                                    <h3 style={{ fontSize: "1.1rem", color: "#e2e8f0", lineHeight: "1.6" }}>{question}</h3>
+                                </div>
+
+                                <div style={{ position: 'relative' }}>
+                                    <textarea
+                                        value={answer}
+                                        onChange={(e) => setAnswer(e.target.value)}
+                                        rows={8}
+                                        placeholder="Type your answer here..."
+                                        style={{
+                                            width: "100%", resize: "vertical",
+                                            background: "rgba(30, 41, 59, 0.5)",
+                                            fontSize: "1rem", lineHeight: "1.5"
+                                        }}
+                                    />
+                                    {/* Mic Icon (Visual Only) */}
+                                    <button
+                                        onClick={toggleRecording}
+                                        style={{
+                                            position: 'absolute', bottom: '15px', right: '15px',
+                                            background: isRecording ? '#ef4444' : 'rgba(148, 163, 184, 0.2)',
+                                            color: 'white', border: 'none', borderRadius: '50%',
+                                            width: '40px', height: '40px', cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            transition: 'all 0.3s ease'
+                                        }}
+                                        title="Toggle Microphone (Simulated)"
+                                    >
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                                        </svg>
+                                    </button>
+                                </div>
+                                {isRecording && <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: 4, textAlign: 'right' }}>● Recording...</p>}
+
+                                <div style={{ marginTop: "2rem", display: "flex", justifyContent: "flex-end" }}>
+                                    <button
+                                        className="btn-gradient"
+                                        onClick={handleSubmit}
+                                        disabled={loading || !answer}
+                                        style={{ padding: "0.8rem 2rem", fontSize: "1rem" }}
+                                    >
+                                        {loading ? <Loader /> : "Submit Answer"}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </Card>
+            </main>
+        </div>
+    );
+};
+
+export default MockInterview;
